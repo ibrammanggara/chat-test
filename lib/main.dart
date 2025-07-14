@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 void main() async {
@@ -15,109 +14,123 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: FirebaseAuth.instance.currentUser == null ? LoginPage() : ChatPage(),
+      debugShowCheckedModeBanner: false,
+      title: 'Chat Login App',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: FirebaseAuth.instance.currentUser == null
+          ? const LoginPage()
+          : const HomePage(),
     );
   }
 }
 
-class LoginPage extends StatelessWidget {
-  Future<UserCredential> signInWithGoogle() async {
-    final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-    final GoogleSignInAuthentication googleAuth = await googleUser!.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-    return await FirebaseAuth.instance.signInWithCredential(credential);
-  }
-
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: ElevatedButton(
-          child: const Text("Sign in with Google"),
-          onPressed: () async {
-            await signInWithGoogle();
-            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ChatPage()));
-          },
-        ),
-      ),
-    );
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
+
+  Future<void> register() async {
+    try {
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: emailController.text,
+        password: passwordController.text,
+      );
+      Navigator.pushReplacement(
+          context, MaterialPageRoute(builder: (_) => const HomePage()));
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Register Error: $e')));
+    }
   }
-}
 
-class ChatPage extends StatefulWidget {
-  @override
-  State<ChatPage> createState() => _ChatPageState();
-}
+  Future<void> login() async {
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: emailController.text,
+        password: passwordController.text,
+      );
+      Navigator.pushReplacement(
+          context, MaterialPageRoute(builder: (_) => const HomePage()));
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Login Error: $e')));
+    }
+  }
 
-class _ChatPageState extends State<ChatPage> {
-  final TextEditingController controller = TextEditingController();
-
-  void sendMessage() {
-    if (controller.text.isNotEmpty) {
-      FirebaseFirestore.instance.collection('messages').add({
-        'text': controller.text,
-        'sender': FirebaseAuth.instance.currentUser?.displayName,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-      controller.clear();
+  Future<void> signInWithGoogle() async {
+    try {
+      final googleUser = await GoogleSignIn().signIn();
+      final googleAuth = await googleUser!.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      Navigator.pushReplacement(
+          context, MaterialPageRoute(builder: (_) => const HomePage()));
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Google Login Error: $e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: const Text('Login/Register')),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            TextField(
+              controller: emailController,
+              decoration: const InputDecoration(labelText: 'Email'),
+            ),
+            TextField(
+              controller: passwordController,
+              decoration: const InputDecoration(labelText: 'Password'),
+              obscureText: true,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: login, child: const Text('Login')),
+            ElevatedButton(onPressed: register, child: const Text('Register')),
+            const Divider(height: 32),
+            ElevatedButton.icon(
+              onPressed: signInWithGoogle,
+              icon: const Icon(Icons.login),
+              label: const Text('Sign in with Google'),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class HomePage extends StatelessWidget {
+  const HomePage({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
       appBar: AppBar(
-        title: Text("Chat - ${FirebaseAuth.instance.currentUser?.displayName}"),
+        title: Text('Welcome ${FirebaseAuth.instance.currentUser?.email ?? ''}'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await FirebaseAuth.instance.signOut();
-              await GoogleSignIn().signOut();
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => LoginPage()));
-            },
-          )
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: StreamBuilder(
-              stream: FirebaseFirestore.instance
-                  .collection('messages')
-                  .orderBy('timestamp')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const CircularProgressIndicator();
-                final docs = snapshot.data!.docs;
-                return ListView(
-                  children: docs.map((doc) => ListTile(
-                    title: Text(doc['text']),
-                    subtitle: Text(doc['sender'] ?? ''),
-                  )).toList(),
-                );
+              onPressed: () async {
+                await FirebaseAuth.instance.signOut();
+                await GoogleSignIn().signOut();
+                Navigator.pushReplacement(context,
+                    MaterialPageRoute(builder: (_) => const LoginPage()));
               },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(labelText: 'Enter Message'),
-                  ),
-                ),
-                IconButton(icon: const Icon(Icons.send), onPressed: sendMessage)
-              ],
-            ),
-          ),
+              icon: const Icon(Icons.logout))
         ],
       ),
+      body: const Center(child: Text('You are now logged in!')),
     );
   }
 }
